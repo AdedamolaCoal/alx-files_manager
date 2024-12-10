@@ -1,8 +1,11 @@
+import Bull from 'bull';
 import { v4 as uuidv4 } from 'uuid';
 import fs from 'fs';
 import path from 'path';
 import redisClient from '../utils/redis.js';
 import dbClient from '../utils/db.js';
+
+const fileQueue = new Bull('fileQueue');
 
 class FilesController {
   static async postUpload(req, res) {
@@ -74,6 +77,13 @@ class FilesController {
     fileDocument.localPath = localPath;
 
     const result = await dbClient.db.collection('files').insertOne(fileDocument);
+
+    if (type === 'image') {
+      fileQueue.add({
+        userId,
+        fileId: result.insertedId.toString(),
+      });
+    }
 
     return res.status(201).json({
       id: result.insertedId,
@@ -211,47 +221,78 @@ class FilesController {
     }
   }
   // GET /files/:id/data
+  // static async getFile(req, res) {
+  //   const { id } = req.params;
+  //   const token = req.headers['x-token'];
+
+  //   let userId = null;
+
+  //   if (token) {
+  //     userId = await redisClient.get(`auth_${token}`);
+  //   }
+
+  //   try {
+  //     const file = await dbClient.db.collection('files').findOne({ _id: dbClient.ObjectId(id) });
+
+  //     if (!file) {
+  //       return res.status(404).json({ error: 'Not found' });
+  //     }
+
+  //     if (file.type === 'folder') {
+  //       return res.status(400).json({ error: "A folder doesn't have content" });
+  //     }
+
+  //     if (!file.isPublic) {
+  //       if (!userId || userId.toString() !== file.userId.toString()) {
+  //         return res.status(404).json({ error: 'Not found' });
+  //       }
+  //     }
+
+  //     if (!file.localPath) {
+  //       return res.status(404).json({ error: 'Not found' });
+  //     }
+
+  //     try {
+  //       const data = await fs.readFile(file.localPath);
+  //       const mimeType = mime.lookup(file.name) || 'application/octet-stream';
+
+  //       res.setHeader('Content-Type', mimeType);
+  //       return res.status(200).send(data);
+  //     } catch (err) {
+  //       return res.status(404).json({ error: 'Not found' });
+  //     }
+  //   } catch (error) {
+  //     return res.status(500).json({ error: 'Internal server error' });
+  //   }
+  // }
+
   static async getFile(req, res) {
     const { id } = req.params;
-    const token = req.headers['x-token'];
-
-    let userId = null;
-
-    if (token) {
-      userId = await redisClient.get(`auth_${token}`);
-    }
+    const { size } = req.query;
 
     try {
-      const file = await dbClient.db.collection('files').findOne({ _id: dbClient.ObjectId(id) });
-
+      const file = await dbClient.db.collection('files').findOne({ _id: ObjectId(id) });
       if (!file) {
         return res.status(404).json({ error: 'Not found' });
       }
 
-      if (file.type === 'folder') {
-        return res.status(400).json({ error: "A folder doesn't have content" });
+      if (size && !['100', '250', '500'].includes(size)) {
+        return res.status(400).json({ error: 'Invalid size parameter' });
       }
 
-      if (!file.isPublic) {
-        if (!userId || userId.toString() !== file.userId.toString()) {
-          return res.status(404).json({ error: 'Not found' });
-        }
-      }
-
-      if (!file.localPath) {
-        return res.status(404).json({ error: 'Not found' });
-      }
+      const filePath = size
+        ? `${file.localPath}_${size}`
+        : file.localPath;
 
       try {
-        const data = await fs.readFile(file.localPath);
+        const data = await fs.readFile(filePath);
         const mimeType = mime.lookup(file.name) || 'application/octet-stream';
-
         res.setHeader('Content-Type', mimeType);
         return res.status(200).send(data);
       } catch (err) {
         return res.status(404).json({ error: 'Not found' });
       }
-    } catch (error) {
+    } catch (err) {
       return res.status(500).json({ error: 'Internal server error' });
     }
   }
