@@ -55,6 +55,14 @@ class DBClient {
       return 0;
     }
   }
+
+  async findUser(query) {
+    return this.db.collection('users').findOne(query);
+  }
+
+  async findUserById(id) {
+    return this.db.collection('users').findOne({ _id: ObjectId(id) });
+  }
 }
 
 const dbClient = new DBClient();
