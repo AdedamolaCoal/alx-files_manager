@@ -1,10 +1,11 @@
-import Bull from 'bull';
+import {Bull, Queue} from 'bull';
 import dbClient from './utils/db.js';
 import imageThumbnail from 'image-thumbnail';
 import fs from 'fs/promises';
 import path from 'path';
 
 const fileQueue = new Bull('fileQueue');
+const userQueue = new Queue('userQueue');
 
 fileQueue.process(async (job) => {
   const { userId, fileId } = job.data;
@@ -32,4 +33,19 @@ fileQueue.process(async (job) => {
   } catch (err) {
     throw new Error(`Error generating thumbnails: ${err.message}`);
   }
+});
+
+
+userQueue.process(async (job) => {
+  const { userId } = job.data;
+
+  // Validate job data
+  if (!userId) throw new Error('Missing userId');
+
+  // Fetch the user from the database
+  const user = await dbClient.usersCollection.findOne({ _id: userId });
+  if (!user) throw new Error('User not found');
+
+  // Simulate sending a welcome email
+  console.log(`Welcome ${user.email}!`);
 });
